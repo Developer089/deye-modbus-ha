@@ -84,7 +84,7 @@ class DeyeModbusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if self._transport == "rtutcp":
                 url = f"socket://{self._host}:{self._port}"
                 params = {
-                    "method": "rtu", "port": url,
+                    "port": url,
                     "baudrate": int(self._serial_params.get("baudrate", 9600)),
                     "bytesize": int(self._serial_params.get("bytesize", 8)),
                     "parity": str(self._serial_params.get("parity", "N")),
