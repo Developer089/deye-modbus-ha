@@ -20,6 +20,7 @@ from .const import (
     CONF_BAUDRATE, DEFAULT_BAUDRATE, CONF_BYTESIZE, DEFAULT_BYTESIZE,
     CONF_PARITY, DEFAULT_PARITY, CONF_STOPBITS, DEFAULT_STOPBITS,
     CONF_ADDR_OFFSET, DEFAULT_ADDR_OFFSET, MIN_SCAN_SECONDS, MAX_SCAN_SECONDS,
+    CONF_WRITE_MODE, DEFAULT_WRITE_MODE, WRITE_MODES,
 )
 from .models import model_options, get_model, DEFAULT_MODEL
 
@@ -96,11 +97,15 @@ class DeyeModbusOptionsFlow(config_entries.OptionsFlow):
         parity = str(self._entry_default(CONF_PARITY, DEFAULT_PARITY)).upper()
         if parity not in {"N", "E", "O"}:
             parity = DEFAULT_PARITY
+        write_mode = str(self._entry_default(CONF_WRITE_MODE, DEFAULT_WRITE_MODE)).lower()
+        if write_mode not in WRITE_MODES:
+            write_mode = DEFAULT_WRITE_MODE
         return vol.Schema({
             vol.Optional(CONF_SCAN_INTERVAL, default=self._entry_int_default(CONF_SCAN_INTERVAL, DEFAULT_SCAN_SECONDS)): vol.All(
                 vol.Coerce(int), vol.Range(min=MIN_SCAN_SECONDS, max=MAX_SCAN_SECONDS)
             ),
             vol.Optional(CONF_TRANSPORT, default=transport): vol.In(["tcp", "rtutcp"]),
+            vol.Optional(CONF_WRITE_MODE, default=write_mode): vol.In(WRITE_MODES),
             vol.Optional(CONF_ADDR_OFFSET, default=self._entry_int_default(CONF_ADDR_OFFSET, DEFAULT_ADDR_OFFSET)): vol.Coerce(int),
             vol.Optional(CONF_BAUDRATE, default=self._entry_int_default(CONF_BAUDRATE, DEFAULT_BAUDRATE)): vol.Coerce(int),
             vol.Optional(CONF_BYTESIZE, default=self._entry_int_default(CONF_BYTESIZE, DEFAULT_BYTESIZE)): vol.Coerce(int),

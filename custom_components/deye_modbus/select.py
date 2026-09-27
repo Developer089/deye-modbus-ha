@@ -5,6 +5,7 @@ import logging
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -75,6 +76,10 @@ class DeyeModbusSelect(CoordinatorEntity[dict[str, Any]], SelectEntity):
         if option not in self._value_by_label:
             return
         ok = await self._coordinator.write_single_register(self._address, self._value_by_label[option])
+        if not ok:
+            raise HomeAssistantError(
+                f"Writing {self._attr_name} to the inverter failed (register {self._address}); see log"
+            )
         if ok:
             self._current_option = option
             self.async_write_ha_state()

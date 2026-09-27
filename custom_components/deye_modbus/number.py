@@ -5,6 +5,7 @@ import logging
 
 from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -77,6 +78,10 @@ class DeyeModbusNumber(CoordinatorEntity[dict[str, Any]], NumberEntity):
         if self._signed and raw < 0:
             raw &= 0xFFFF
         ok = await self._coordinator.write_single_register(self._address, raw)
+        if not ok:
+            raise HomeAssistantError(
+                f"Writing {self._attr_name} to the inverter failed (register {self._address}); see log"
+            )
         if ok:
             self._value = v
             self.async_write_ha_state()

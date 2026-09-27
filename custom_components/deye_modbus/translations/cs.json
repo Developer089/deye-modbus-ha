@@ -29,7 +29,8 @@
           "baudrate": "Baudrate (RTU přes TCP)",
           "bytesize": "Datové bity (RTU přes TCP)",
           "parity": "Parita (RTU přes TCP)",
-          "stopbits": "Stop bity (RTU přes TCP)"
+          "stopbits": "Stop bity (RTU přes TCP)",
+          "write_mode": "Funkční kód pro zápis ovládacích prvků (fc16 doporučeno pro Deye / fc06 starší)"
         }
       }
     }

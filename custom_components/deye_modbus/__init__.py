@@ -13,7 +13,7 @@ from .const import (
     CONF_TRANSPORT, DEFAULT_TRANSPORT, CONF_BAUDRATE, DEFAULT_BAUDRATE,
     CONF_BYTESIZE, DEFAULT_BYTESIZE, CONF_PARITY, DEFAULT_PARITY,
     CONF_STOPBITS, DEFAULT_STOPBITS, CONF_ADDR_OFFSET, DEFAULT_ADDR_OFFSET,
-    MIN_SCAN_SECONDS, MAX_SCAN_SECONDS,
+    MIN_SCAN_SECONDS, MAX_SCAN_SECONDS, CONF_WRITE_MODE, DEFAULT_WRITE_MODE,
 )
 from .coordinator import DeyeModbusCoordinator, RegisterDef
 from .mapping import load_register_mapping
@@ -83,6 +83,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     scan_interval = max(MIN_SCAN_SECONDS, min(MAX_SCAN_SECONDS, int(scan_interval)))
     transport = entry.options.get(CONF_TRANSPORT, entry.data.get(CONF_TRANSPORT, DEFAULT_TRANSPORT))
     addr_offset = entry.options.get(CONF_ADDR_OFFSET, DEFAULT_ADDR_OFFSET)
+    write_mode = entry.options.get(CONF_WRITE_MODE, DEFAULT_WRITE_MODE)
     serial_params = {
         "baudrate": entry.options.get(CONF_BAUDRATE, DEFAULT_BAUDRATE),
         "bytesize": entry.options.get(CONF_BYTESIZE, DEFAULT_BYTESIZE),
@@ -104,6 +105,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = DeyeModbusCoordinator(
         hass, host, port, unit_id, registers, scan_interval,
         transport=transport, serial_params=serial_params, address_offset=addr_offset,
+        write_mode=write_mode,
     )
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
@@ -114,7 +116,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     async def _svc_write_register(call: ServiceCall):
-        ok = await coordinator.write_single_register(int(call.data["address"]), int(call.data["value"]))
+        ok = await coordinator.write_register_fc06(int(call.data["address"]), int(call.data["value"]))
         _LOGGER.info("write_register -> %s", ok)
 
     async def _svc_write_registers(call: ServiceCall):
