@@ -20,7 +20,7 @@ Some entities (PV3/PV4, per-phase detail) ship **disabled by default** — enabl
 
 ## Quick start
 
-1. Install via HACS, then **restart Home Assistant**.
+1. Install via the Marketplace (or HACS before Home Assistant 2026.11), then **restart Home Assistant**.
 2. **Settings ▸ Devices & Services ▸ Add Integration → "Deye Modbus"**.
 3. Pick your model and enter the logger IP (e.g. `192.168.x.x`), port (`8899` for the Deye logger, `502` for an RS485↔TCP gateway), Modbus unit ID (`1`) and scan interval.
 

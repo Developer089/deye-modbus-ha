@@ -5,7 +5,7 @@ Local Home Assistant integration for **Deye three-phase hybrid inverters** (SUN-
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![Integration](https://img.shields.io/badge/type-local__polling-brightgreen.svg)](#)
 
-> This is a **custom repository** for HACS. It is not (yet) in the default HACS store, so you add it manually — see [Installation](#installation).
+> This is a **custom repository**. It is not (yet) in the default catalog, so you add it by link — see [Installation](#installation).
 
 ---
 
@@ -25,7 +25,20 @@ Local Home Assistant integration for **Deye three-phase hybrid inverters** (SUN-
 
 ## Installation
 
-### Via HACS (recommended)
+### Home Assistant 2026.11 and newer — Marketplace (recommended)
+
+Home Assistant 2026.11 replaced HACS with the built-in **Marketplace**; HACS can no longer be installed there.
+
+1. Go to **Settings ▸ Marketplace** (administrators only; accept the warning on the first visit).
+2. Select **Add from link** in the upper-right corner. Adding a custom repository needs a connected GitHub account — the Marketplace asks for it if it is missing.
+3. Under **GitHub link** enter `https://github.com/Developer089/deye-modbus-ha` and select **Add**. If it asks for a **Type**, choose **Integration**.
+4. Open the repository page and select **Install**.
+5. **Restart Home Assistant.**
+6. Go to **Settings ▸ Devices & Services ▸ Add Integration** and search for **Deye Modbus**.
+
+If you installed this integration with HACS before upgrading, it is migrated automatically and keeps receiving updates under **Settings ▸ Updates**.
+
+### Home Assistant before 2026.11 — HACS
 
 1. In Home Assistant go to **HACS**.
 2. Open the top-right menu **⋮ → Custom repositories**.
@@ -196,7 +209,19 @@ The control and service entities **write settings to your inverter**. Changing w
 
 **Deye Modbus pro Home Assistant** je lokální integrace pro **třífázové hybridní měniče Deye** (řada SUN-\*K-SG04LP3 / SG05LP3, včetně SUN-12K-SG05LP3). Komunikuje přímo přes Modbus TCP s WiFi/LAN loggerem měniče (výchozí port **8899**) nebo s převodníkem RS485↔TCP (obvykle port **502**). Nepotřebuje cloud ani účet SolarMAN — vše probíhá ve vaší síti.
 
-### Instalace přes HACS
+### Instalace přes Marketplace (Home Assistant 2026.11 a novější)
+
+Od verze 2026.11 nahradil HACS vestavěný **Marketplace**; HACS už nainstalovat nejde.
+
+1. Otevřete **Nastavení ▸ Marketplace** (jen pro administrátory; při první návštěvě potvrďte upozornění).
+2. Vpravo nahoře zvolte **Add from link**. Je k tomu potřeba propojený účet GitHub — Marketplace si o něj řekne.
+3. Do pole **GitHub link** zadejte `https://github.com/Developer089/deye-modbus-ha` a potvrďte **Add**. Pokud se zeptá na **Type**, zvolte **Integration**.
+4. Otevřete stránku repozitáře a zvolte **Install**.
+5. **Restartujte Home Assistant** a přidejte integraci **Deye Modbus** v **Nastavení ▸ Zařízení a služby**.
+
+Integrace nainstalovaná dříve přes HACS se po aktualizaci převede sama a dál dostává aktualizace v **Nastavení ▸ Aktualizace**.
+
+### Instalace přes HACS (Home Assistant starší než 2026.11)
 
 1. V **HACS** otevřete menu **⋮ → Custom repositories** (Vlastní repozitáře).
 2. Přidejte adresu `https://github.com/Developer089/deye-modbus-ha` a jako kategorii zvolte **Integration**.
