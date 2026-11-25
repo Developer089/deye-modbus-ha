@@ -29,7 +29,8 @@
           "baudrate": "Baud rate (RTU over TCP)",
           "bytesize": "Byte size (RTU over TCP)",
           "parity": "Parity (RTU over TCP)",
-          "stopbits": "Stop bits (RTU over TCP)"
+          "stopbits": "Stop bits (RTU over TCP)",
+          "write_mode": "Write function code for controls (fc16 recommended for Deye / fc06 legacy)"
         }
       }
     }

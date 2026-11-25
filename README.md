@@ -119,6 +119,9 @@ Open the integration and click **Configure** to change (no restart needed — th
 - **Transport** — `tcp` (standard Modbus TCP) or `rtutcp` (RTU frame over a raw TCP socket, for some gateways).
 - **Address offset** — added to every register address, for gateways that shift the map.
 - **Serial parameters** — baud rate, byte size, parity (N/E/O), stop bits (only relevant for `rtutcp`).
+- **Write mode** — Modbus function code used when a control entity (number / select / switch) writes a single register:
+  - `fc16` *(default)* — "Write Multiple Registers" with one value. This is what Deye's protocol document specifies, and many Deye inverters/loggers **silently ignore FC06**, which shows up as `No response received after 3 retries` and a value that never changes.
+  - `fc06` — "Write Single Register" (behaviour of v0.1.1 and earlier). Only use this if your gateway does not support FC16.
 
 ---
 
@@ -157,6 +160,7 @@ data:
 
 - **No data / entities unavailable.** Double-check the **port** (`8899` for the Deye logger vs `502` for an RS485↔TCP gateway) and the **Modbus unit ID** (usually `1`). Confirm the IP is reachable from the HA host (`ping`), and that the logger firmware is recent.
 - **Only one Modbus master at a time.** The inverter/logger accepts a **single** Modbus connection. This integration will **conflict with the SolarMAN cloud logging and with any other Modbus poller** (a second HA integration, Node-RED, etc.). If the SolarMAN app / cloud is actively connected you may see dropouts — expect to give up cloud logging, or poll via a separate RS485 gateway.
+- **Setting a control has no effect / write timeouts.** Make sure *Write mode* in Options is `fc16`. Failed writes are logged by `custom_components.deye_modbus.coordinator` and shown as an error in the UI.
 - **Intermittent timeouts.** Increase the **scan interval**, reduce competing connections, or improve WiFi signal to the logger. For flaky gateways try the `rtutcp` transport in Options.
 - **Wrong or shifted values.** If a gateway shifts the address map, set an **address offset** in Options.
 

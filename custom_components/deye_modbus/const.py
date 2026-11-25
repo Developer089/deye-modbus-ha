@@ -16,6 +16,7 @@ CONF_BYTESIZE: Final = "bytesize"
 CONF_PARITY: Final = "parity"
 CONF_STOPBITS: Final = "stopbits"
 CONF_ADDR_OFFSET: Final = "address_offset"
+CONF_WRITE_MODE: Final = "write_mode"
 
 # --- Defaults ---
 # Deye WiFi/LAN loggers expose Modbus TCP on 8899 by default. Third-party
@@ -27,6 +28,16 @@ MIN_SCAN_SECONDS: Final = 5
 MAX_SCAN_SECONDS: Final = 300
 DEFAULT_TRANSPORT: Final = "tcp"
 DEFAULT_ADDR_OFFSET: Final = 0
+
+# Function code used when a control entity writes a single 16-bit register.
+# Deye hybrid inverters (per the official Deye Modbus protocol document) only
+# accept writes via FC16 "Write Multiple Registers"; FC06 requests are silently
+# dropped by many firmware/logger combinations, which surfaces as a timeout.
+# FC16 with a single register is a valid Modbus request, so it is the default.
+WRITE_MODE_FC16: Final = "fc16"
+WRITE_MODE_FC06: Final = "fc06"
+WRITE_MODES: Final = [WRITE_MODE_FC16, WRITE_MODE_FC06]
+DEFAULT_WRITE_MODE: Final = WRITE_MODE_FC16
 
 # Serial params (only used when transport == "rtutcp")
 DEFAULT_BAUDRATE: Final = 9600

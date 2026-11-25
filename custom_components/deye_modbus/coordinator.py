@@ -62,6 +62,7 @@ class DeyeModbusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         transport: str = "tcp",
         serial_params: dict | None = None,
         address_offset: int = 0,
+        write_mode: str = "fc16",
     ) -> None:
         super().__init__(
             hass, _LOGGER, name="deye_modbus coordinator",
@@ -74,6 +75,7 @@ class DeyeModbusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._client = None
         self._lock = asyncio.Lock()
         self._addr_off = int(address_offset or 0)
+        self._write_mode = (write_mode or "fc16").lower()
 
     def _addr(self, addr: int) -> int:
         return int(addr) - self._addr_off if self._addr_off else int(addr)
@@ -199,49 +201,64 @@ class DeyeModbusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return None if rr is None or (getattr(rr, "isError", None) and rr.isError()) else getattr(rr, "registers", None)
 
     # ------------------------------------------------------------------ writes
-    async def write_single_register(self, address: int, value: int) -> bool:
+    async def _write_call(self, method_name: str, address: int, payload, what: str) -> bool:
+        """Run one Modbus write, serialised with polling on the shared client.
+
+        All requests share a single TCP connection; without the lock a write can
+        interleave with a poll, which pymodbus reports as a transaction_id
+        mismatch and which can drop the write. Failures are logged instead of
+        being swallowed so that a rejected write is visible in the HA log.
+        """
         a = self._addr(address)
-        client = await self._ensure_client()
-        wire = int(value) & 0xFFFF
-        for variant in (
-            lambda: client.write_register(a, wire, slave=self._unit_id),
-            lambda: client.write_register(a, wire, self._unit_id),
-            lambda: client.write_register(address=a, value=wire, unit=self._unit_id),
-            lambda: client.write_register(a, wire),
-        ):
-            try:
-                rr = await variant()
-                if getattr(rr, "isError", lambda: False)():
+        ok = False
+        async with self._lock:
+            client = await self._ensure_client()
+            method = getattr(client, method_name)
+            # pymodbus 3.x -> slave=, pymodbus 2.x -> unit=, older -> positional.
+            for variant in (
+                lambda: method(a, payload, slave=self._unit_id),
+                lambda: method(a, payload, self._unit_id),
+                lambda: method(a, payload, unit=self._unit_id),
+                lambda: method(a, payload),
+            ):
+                try:
+                    rr = await variant()
+                except TypeError:
                     continue
-                await self.async_request_refresh()
-                return True
-            except TypeError:
-                continue
-            except Exception:  # noqa: BLE001
-                return False
-        return False
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.warning("Modbus %s to register %s failed: %s", what, address, err)
+                    return False
+                if getattr(rr, "isError", lambda: False)():
+                    _LOGGER.warning("Modbus %s to register %s rejected by inverter: %s", what, address, rr)
+                    return False
+                ok = True
+                break
+            else:
+                _LOGGER.warning("Modbus %s to register %s: no compatible pymodbus call signature", what, address)
+        if ok:
+            _LOGGER.debug("Modbus %s to register %s OK: %s", what, address, payload)
+            await self.async_request_refresh()
+        return ok
+
+    async def write_single_register(self, address: int, value: int) -> bool:
+        """Write one 16-bit holding register using the configured function code.
+
+        With write_mode == "fc16" (default) this sends FC16 "Write Multiple
+        Registers" with a single value, which Deye inverters accept. With
+        "fc06" it sends FC06 "Write Single Register" (legacy behaviour).
+        """
+        wire = int(value) & 0xFFFF
+        if self._write_mode == "fc06":
+            return await self.write_register_fc06(address, wire)
+        return await self._write_call("write_registers", address, [wire], "FC16 write")
+
+    async def write_register_fc06(self, address: int, value: int) -> bool:
+        """Always use FC06, regardless of write_mode (for the raw service)."""
+        return await self._write_call("write_register", address, int(value) & 0xFFFF, "FC06 write")
 
     async def write_multiple_registers(self, address: int, values: list[int]) -> bool:
-        a = self._addr(address)
-        client = await self._ensure_client()
         vals = [int(v) & 0xFFFF for v in values]
-        for variant in (
-            lambda: client.write_registers(a, vals, slave=self._unit_id),
-            lambda: client.write_registers(a, vals, self._unit_id),
-            lambda: client.write_registers(address=a, values=vals, unit=self._unit_id),
-            lambda: client.write_registers(a, vals),
-        ):
-            try:
-                rr = await variant()
-                if getattr(rr, "isError", lambda: False)():
-                    continue
-                await self.async_request_refresh()
-                return True
-            except TypeError:
-                continue
-            except Exception:  # noqa: BLE001
-                return False
-        return False
+        return await self._write_call("write_registers", address, vals, "FC16 write")
 
     async def write_u32(self, base_address: int, value: int, word_order: str = "high_low") -> bool:
         v = int(value) & 0xFFFFFFFF
@@ -250,25 +267,7 @@ class DeyeModbusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return await self.write_multiple_registers(base_address, values)
 
     async def write_coil(self, address: int, value: int) -> bool:
-        a = self._addr(address)
-        client = await self._ensure_client()
-        for variant in (
-            lambda: client.write_coil(a, bool(value), slave=self._unit_id),
-            lambda: client.write_coil(a, bool(value), self._unit_id),
-            lambda: client.write_coil(address=a, value=bool(value), unit=self._unit_id),
-            lambda: client.write_coil(a, bool(value)),
-        ):
-            try:
-                rr = await variant()
-                if getattr(rr, "isError", lambda: False)():
-                    continue
-                await self.async_request_refresh()
-                return True
-            except TypeError:
-                continue
-            except Exception:  # noqa: BLE001
-                return False
-        return False
+        return await self._write_call("write_coil", address, bool(value), "FC05 write")
 
     async def async_close(self):
         try:
