@@ -776,10 +776,31 @@ sensors:
     state_class: total_increasing
 
 
+  # ---------------------------------------------------------------- settings (read-only)
+  # Decides which time-of-use target applies: "Voltage" -> TOU Voltage 1-6,
+  # "Capacity (SOC)" -> TOU SOC 1-6.
+  - name: Battery Control Mode
+    unique_id: battery_control_mode
+    register_type: holding
+    address: 111
+    icon: mdi:battery-heart-variant
+    entity_category: diagnostic
+    options:
+      0: Voltage
+      1: Capacity (SOC)
+      2: No battery
+
 # =====================================================================
-# Writable controls (holding registers 60-499, written with FC06/FC16).
+# Writable controls (holding registers 60-499). Deye only accepts writes with
+# FC16 "write multiple registers", which is the integration's default.
 # Each control gets a hidden read-back sensor injected automatically so the
 # entity reflects the inverter's current value.
+#
+# Control keys beyond the obvious ones:
+#   * mask          -> switch/select owns only these bits of a packed register;
+#                      the other bits are read back and preserved on write
+#   * write_factor  -> number: raw = value * write_factor (read back is divided)
+#   * type: time    -> register holds a clock time as decimal HHMM (2355 = 23:55)
 # =====================================================================
 controls:
 
@@ -839,9 +860,27 @@ controls:
       - label: Zero Export To CT
         value: 2
 
+  - type: select
+    name: Gen Port Mode
+    unique_id: gen_mode
+    register_type: holding
+    address: 133
+    icon: mdi:home-lightning-bolt
+    entity_category: config
+    options:
+      - label: Generator
+        value: 0
+      - label: Smart Load
+        value: 1
+      - label: Micro Inv Input
+        value: 2
+
   # ------------------------------------------------------------- power limits
+  # Register 340 is "Max Solar Power" and 143 is "Max Sell Power" on the
+  # inverter screen / Solarman app. The unique_ids predate that fix and are
+  # kept so existing entities stay bound to the same register.
   - type: number
-    name: Max Sell Power
+    name: Max Solar Power
     unique_id: max_sell_power
     register_type: holding
     address: 340
@@ -854,7 +893,7 @@ controls:
     entity_category: config
 
   - type: number
-    name: Max Grid Output Power
+    name: Max Sell Power
     unique_id: max_grid_output_power
     register_type: holding
     address: 143
@@ -887,7 +926,7 @@ controls:
     register_type: holding
     address: 108
     min: 0
-    max: 185
+    max: 240
     step: 1
     unit_of_measurement: A
     mode: box
@@ -900,7 +939,7 @@ controls:
     register_type: holding
     address: 109
     min: 0
-    max: 185
+    max: 240
     step: 1
     unit_of_measurement: A
     mode: box
@@ -966,7 +1005,7 @@ controls:
     register_type: holding
     address: 128
     min: 0
-    max: 185
+    max: 240
     step: 1
     unit_of_measurement: A
     mode: box
@@ -1002,90 +1041,130 @@ controls:
     entity_category: config
     enabled_default: false
 
-  # ------------------------------------------------------------- time-of-use programming (6 slots)
-  - type: number
+  # ------------------------------------------------------------- time of use (6 slots)
+  # Register 146 packs the master enable (bit 0) and the weekdays (bits 1-7).
+  # Each slot N runs from "TOU Time N" to "TOU Time N+1" (slot 6 wraps to slot 1)
+  # and has: a battery power limit, a target the battery is held at (voltage
+  # *or* SOC - see the "Battery Control Mode" sensor) and a charge source.
+  - type: switch
+    name: Time Of Use
+    unique_id: tou_enable
+    register_type: holding
+    address: 146
+    mask: 0x01
+    icon: mdi:calendar-clock
+    entity_category: config
+
+  - type: switch
+    name: TOU Monday
+    unique_id: tou_day_monday
+    register_type: holding
+    address: 146
+    mask: 0x02
+    icon: mdi:calendar-week
+    entity_category: config
+
+  - type: switch
+    name: TOU Tuesday
+    unique_id: tou_day_tuesday
+    register_type: holding
+    address: 146
+    mask: 0x04
+    icon: mdi:calendar-week
+    entity_category: config
+
+  - type: switch
+    name: TOU Wednesday
+    unique_id: tou_day_wednesday
+    register_type: holding
+    address: 146
+    mask: 0x08
+    icon: mdi:calendar-week
+    entity_category: config
+
+  - type: switch
+    name: TOU Thursday
+    unique_id: tou_day_thursday
+    register_type: holding
+    address: 146
+    mask: 0x10
+    icon: mdi:calendar-week
+    entity_category: config
+
+  - type: switch
+    name: TOU Friday
+    unique_id: tou_day_friday
+    register_type: holding
+    address: 146
+    mask: 0x20
+    icon: mdi:calendar-week
+    entity_category: config
+
+  - type: switch
+    name: TOU Saturday
+    unique_id: tou_day_saturday
+    register_type: holding
+    address: 146
+    mask: 0x40
+    icon: mdi:calendar-week
+    entity_category: config
+
+  - type: switch
+    name: TOU Sunday
+    unique_id: tou_day_sunday
+    register_type: holding
+    address: 146
+    mask: 0x80
+    icon: mdi:calendar-week
+    entity_category: config
+
+  - type: time
     name: TOU Time 1
     unique_id: tou_time_1
     register_type: holding
     address: 148
-    min: 0
-    max: 2359
-    step: 1
-    mode: box
-    write_factor: 1
     icon: mdi:clock-outline
     entity_category: config
-    enabled_default: false
 
-  - type: number
+  - type: time
     name: TOU Time 2
     unique_id: tou_time_2
     register_type: holding
     address: 149
-    min: 0
-    max: 2359
-    step: 1
-    mode: box
-    write_factor: 1
     icon: mdi:clock-outline
     entity_category: config
-    enabled_default: false
 
-  - type: number
+  - type: time
     name: TOU Time 3
     unique_id: tou_time_3
     register_type: holding
     address: 150
-    min: 0
-    max: 2359
-    step: 1
-    mode: box
-    write_factor: 1
     icon: mdi:clock-outline
     entity_category: config
-    enabled_default: false
 
-  - type: number
+  - type: time
     name: TOU Time 4
     unique_id: tou_time_4
     register_type: holding
     address: 151
-    min: 0
-    max: 2359
-    step: 1
-    mode: box
-    write_factor: 1
     icon: mdi:clock-outline
     entity_category: config
-    enabled_default: false
 
-  - type: number
+  - type: time
     name: TOU Time 5
     unique_id: tou_time_5
     register_type: holding
     address: 152
-    min: 0
-    max: 2359
-    step: 1
-    mode: box
-    write_factor: 1
     icon: mdi:clock-outline
     entity_category: config
-    enabled_default: false
 
-  - type: number
+  - type: time
     name: TOU Time 6
     unique_id: tou_time_6
     register_type: holding
     address: 153
-    min: 0
-    max: 2359
-    step: 1
-    mode: box
-    write_factor: 1
     icon: mdi:clock-outline
     entity_category: config
-    enabled_default: false
 
   - type: number
     name: TOU Power 1
@@ -1099,7 +1178,6 @@ controls:
     mode: box
     write_factor: 1
     entity_category: config
-    enabled_default: false
 
   - type: number
     name: TOU Power 2
@@ -1113,7 +1191,6 @@ controls:
     mode: box
     write_factor: 1
     entity_category: config
-    enabled_default: false
 
   - type: number
     name: TOU Power 3
@@ -1127,7 +1204,6 @@ controls:
     mode: box
     write_factor: 1
     entity_category: config
-    enabled_default: false
 
   - type: number
     name: TOU Power 4
@@ -1141,7 +1217,6 @@ controls:
     mode: box
     write_factor: 1
     entity_category: config
-    enabled_default: false
 
   - type: number
     name: TOU Power 5
@@ -1155,7 +1230,6 @@ controls:
     mode: box
     write_factor: 1
     entity_category: config
-    enabled_default: false
 
   - type: number
     name: TOU Power 6
@@ -1169,7 +1243,90 @@ controls:
     mode: box
     write_factor: 1
     entity_category: config
-    enabled_default: false
+
+  - type: number
+    name: TOU Voltage 1
+    unique_id: tou_voltage_1
+    register_type: holding
+    address: 160
+    min: 38
+    max: 63
+    step: 0.1
+    unit_of_measurement: V
+    mode: box
+    write_factor: 100
+    icon: mdi:battery-charging-medium
+    entity_category: config
+
+  - type: number
+    name: TOU Voltage 2
+    unique_id: tou_voltage_2
+    register_type: holding
+    address: 161
+    min: 38
+    max: 63
+    step: 0.1
+    unit_of_measurement: V
+    mode: box
+    write_factor: 100
+    icon: mdi:battery-charging-medium
+    entity_category: config
+
+  - type: number
+    name: TOU Voltage 3
+    unique_id: tou_voltage_3
+    register_type: holding
+    address: 162
+    min: 38
+    max: 63
+    step: 0.1
+    unit_of_measurement: V
+    mode: box
+    write_factor: 100
+    icon: mdi:battery-charging-medium
+    entity_category: config
+
+  - type: number
+    name: TOU Voltage 4
+    unique_id: tou_voltage_4
+    register_type: holding
+    address: 163
+    min: 38
+    max: 63
+    step: 0.1
+    unit_of_measurement: V
+    mode: box
+    write_factor: 100
+    icon: mdi:battery-charging-medium
+    entity_category: config
+
+  - type: number
+    name: TOU Voltage 5
+    unique_id: tou_voltage_5
+    register_type: holding
+    address: 164
+    min: 38
+    max: 63
+    step: 0.1
+    unit_of_measurement: V
+    mode: box
+    write_factor: 100
+    icon: mdi:battery-charging-medium
+    entity_category: config
+
+  - type: number
+    name: TOU Voltage 6
+    unique_id: tou_voltage_6
+    register_type: holding
+    address: 165
+    min: 38
+    max: 63
+    step: 0.1
+    unit_of_measurement: V
+    mode: box
+    write_factor: 100
+    icon: mdi:battery-charging-medium
+    entity_category: config
 
   - type: number
     name: TOU SOC 1
@@ -1183,7 +1340,6 @@ controls:
     mode: slider
     write_factor: 1
     entity_category: config
-    enabled_default: false
 
   - type: number
     name: TOU SOC 2
@@ -1197,7 +1353,6 @@ controls:
     mode: slider
     write_factor: 1
     entity_category: config
-    enabled_default: false
 
   - type: number
     name: TOU SOC 3
@@ -1211,7 +1366,6 @@ controls:
     mode: slider
     write_factor: 1
     entity_category: config
-    enabled_default: false
 
   - type: number
     name: TOU SOC 4
@@ -1225,7 +1379,6 @@ controls:
     mode: slider
     write_factor: 1
     entity_category: config
-    enabled_default: false
 
   - type: number
     name: TOU SOC 5
@@ -1239,7 +1392,6 @@ controls:
     mode: slider
     write_factor: 1
     entity_category: config
-    enabled_default: false
 
   - type: number
     name: TOU SOC 6
@@ -1253,15 +1405,15 @@ controls:
     mode: slider
     write_factor: 1
     entity_category: config
-    enabled_default: false
 
   - type: select
     name: TOU Charge Source 1
     unique_id: tou_charge_1
     register_type: holding
     address: 172
+    mask: 0x03
+    icon: mdi:battery-charging
     entity_category: config
-    enabled_default: false
     options:
       - label: 'Off'
         value: 0
@@ -1277,8 +1429,9 @@ controls:
     unique_id: tou_charge_2
     register_type: holding
     address: 173
+    mask: 0x03
+    icon: mdi:battery-charging
     entity_category: config
-    enabled_default: false
     options:
       - label: 'Off'
         value: 0
@@ -1294,8 +1447,9 @@ controls:
     unique_id: tou_charge_3
     register_type: holding
     address: 174
+    mask: 0x03
+    icon: mdi:battery-charging
     entity_category: config
-    enabled_default: false
     options:
       - label: 'Off'
         value: 0
@@ -1311,8 +1465,9 @@ controls:
     unique_id: tou_charge_4
     register_type: holding
     address: 175
+    mask: 0x03
+    icon: mdi:battery-charging
     entity_category: config
-    enabled_default: false
     options:
       - label: 'Off'
         value: 0
@@ -1328,8 +1483,9 @@ controls:
     unique_id: tou_charge_5
     register_type: holding
     address: 176
+    mask: 0x03
+    icon: mdi:battery-charging
     entity_category: config
-    enabled_default: false
     options:
       - label: 'Off'
         value: 0
@@ -1345,8 +1501,9 @@ controls:
     unique_id: tou_charge_6
     register_type: holding
     address: 177
+    mask: 0x03
+    icon: mdi:battery-charging
     entity_category: config
-    enabled_default: false
     options:
       - label: 'Off'
         value: 0

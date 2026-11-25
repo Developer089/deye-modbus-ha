@@ -62,7 +62,9 @@ class DeyeModbusNumber(CoordinatorEntity[dict[str, Any]], NumberEntity):
         self._write_factor = float(cfg.get("write_factor", 1.0))
         self._signed = bool(cfg.get("signed", False))
         self._read_uid: Optional[str] = cfg.get("read_unique_id")
-        self._read_factor = float(cfg.get("read_factor", 1.0))
+        # The read-back sensor holds the raw register, so by default undo the
+        # write factor (raw 4500 with write_factor 100 -> 45.0).
+        self._read_factor = float(cfg.get("read_factor") or (1.0 / self._write_factor if self._write_factor else 1.0))
         self._value: float = max(self._attr_native_min_value, min(self._attr_native_max_value, 0.0))
         self._sync_from_sensor()
 
@@ -73,7 +75,7 @@ class DeyeModbusNumber(CoordinatorEntity[dict[str, Any]], NumberEntity):
     async def async_set_native_value(self, value: float) -> None:
         step = self._attr_native_step or 1.0
         minv, maxv = self._attr_native_min_value, self._attr_native_max_value
-        v = max(minv, min(maxv, round(value / step) * step))
+        v = round(max(minv, min(maxv, round(value / step) * step)), 6)
         raw = int(round(v * self._write_factor))
         if self._signed and raw < 0:
             raw &= 0xFFFF
@@ -82,10 +84,8 @@ class DeyeModbusNumber(CoordinatorEntity[dict[str, Any]], NumberEntity):
             raise HomeAssistantError(
                 f"Writing {self._attr_name} to the inverter failed (register {self._address}); see log"
             )
-        if ok:
-            self._value = v
-            self.async_write_ha_state()
-            await self._coordinator.async_request_refresh()
+        self._value = v
+        self.async_write_ha_state()
 
     def _sync_from_sensor(self) -> None:
         if not self._read_uid:
@@ -100,7 +100,7 @@ class DeyeModbusNumber(CoordinatorEntity[dict[str, Any]], NumberEntity):
             val *= self._read_factor
             step = self._attr_native_step or 1.0
             minv, maxv = self._attr_native_min_value, self._attr_native_max_value
-            self._value = max(minv, min(maxv, round(val / step) * step))
+            self._value = round(max(minv, min(maxv, round(val / step) * step)), 6)
         except Exception:  # noqa: BLE001
             pass
 

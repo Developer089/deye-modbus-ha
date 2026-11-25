@@ -8,10 +8,11 @@ into single Modbus reads to keep the poll cheap.
 """
 from __future__ import annotations
 import asyncio
+import inspect
 import logging
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, Dict, List
+from typing import Any, List
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -23,6 +24,19 @@ try:
 except Exception as exc:  # pragma: no cover
     _LOGGER.error("pymodbus import failed: %s", exc)
     raise
+
+try:  # pymodbus >= 3.7
+    from pymodbus import FramerType
+    _RTU_FRAMER = FramerType.RTU
+except Exception:  # noqa: BLE001
+    try:  # pymodbus 3.5 / 3.6
+        from pymodbus import Framer
+        _RTU_FRAMER = Framer.RTU
+    except Exception:  # noqa: BLE001 - fall back to the serial client
+        _RTU_FRAMER = None
+
+# Name of the "which Modbus unit" keyword, newest pymodbus first.
+_UNIT_KWARGS = ("device_id", "slave", "unit")
 
 
 @dataclass
@@ -46,6 +60,7 @@ class RegisterDef:
     icon: str | None = None
     enabled_default: bool = True             # entity_registry_enabled_default
     precision: int | None = None             # suggested_display_precision (decimals)
+    entity_category: str | None = None       # "diagnostic" for informational sensors
 
 
 class DeyeModbusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -76,35 +91,62 @@ class DeyeModbusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._lock = asyncio.Lock()
         self._addr_off = int(address_offset or 0)
         self._write_mode = (write_mode or "fc16").lower()
+        self._unit_kw: str | None = None
 
     def _addr(self, addr: int) -> int:
         return int(addr) - self._addr_off if self._addr_off else int(addr)
 
     # ------------------------------------------------------------------ client
+    def _build_client(self):
+        if self._transport != "rtutcp":
+            try:
+                return AsyncModbusTcpClient(self._host, port=self._port, timeout=5)
+            except TypeError:
+                return AsyncModbusTcpClient(self._host, port=self._port)
+        # RTU frames tunnelled through a raw TCP socket (transparent RS485
+        # gateways such as the Elfin EW11). A TCP client with the RTU framer is
+        # the supported way to do this; the serial line settings live in the
+        # gateway, not here.
+        if _RTU_FRAMER is not None:
+            try:
+                return AsyncModbusTcpClient(self._host, port=self._port, framer=_RTU_FRAMER, timeout=5)
+            except TypeError:
+                pass
+        return AsyncModbusSerialClient(
+            port=f"socket://{self._host}:{self._port}",
+            baudrate=int(self._serial_params.get("baudrate", 9600)),
+            bytesize=int(self._serial_params.get("bytesize", 8)),
+            parity=str(self._serial_params.get("parity", "N")),
+            stopbits=int(self._serial_params.get("stopbits", 1)),
+            timeout=5,
+        )
+
     async def _ensure_client(self):
         if self._client is None:
-            if self._transport == "rtutcp":
-                url = f"socket://{self._host}:{self._port}"
-                params = {
-                    "port": url,
-                    "baudrate": int(self._serial_params.get("baudrate", 9600)),
-                    "bytesize": int(self._serial_params.get("bytesize", 8)),
-                    "parity": str(self._serial_params.get("parity", "N")),
-                    "stopbits": int(self._serial_params.get("stopbits", 1)),
-                    "timeout": 5,
-                }
-                self._client = AsyncModbusSerialClient(**params)
-            else:
-                try:
-                    self._client = AsyncModbusTcpClient(self._host, port=self._port, timeout=5)
-                except TypeError:
-                    self._client = AsyncModbusTcpClient(self._host, port=self._port)
+            self._client = self._build_client()
         if not bool(getattr(self._client, "connected", False)):
             try:
                 await self._client.connect()
             except Exception as e:  # noqa: BLE001
                 raise UpdateFailed(f"Modbus connect failed: {e}") from e
         return self._client
+
+    def _unit_kwargs(self, method) -> dict[str, int]:
+        """Return the unit-id keyword this pymodbus version expects.
+
+        pymodbus renamed it twice (unit -> slave -> device_id). Guessing by
+        catching TypeError silently fell back to pymodbus' default unit, so the
+        signature is inspected instead.
+        """
+        if self._unit_kw is None:
+            try:
+                params = inspect.signature(method).parameters
+            except (TypeError, ValueError):
+                params = {}
+            self._unit_kw = next((k for k in _UNIT_KWARGS if k in params), "")
+            if not self._unit_kw:
+                _LOGGER.warning("pymodbus exposes no unit-id argument; using its default unit")
+        return {self._unit_kw: self._unit_id} if self._unit_kw else {}
 
     # ------------------------------------------------------------------ polling
     async def _async_update_data(self) -> dict[str, Any]:
@@ -141,7 +183,8 @@ class DeyeModbusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await self._read_window(fn, out, start, end, acc)
 
     async def _read_window(self, fn, out, start, end, regs):
-        raw = await fn(self._addr(start), end - start)
+        # The address offset is applied once, in _call_read.
+        raw = await fn(start, end - start)
         for r in regs:
             out[r.unique_id] = self._decode(r, raw, start)
 
@@ -176,21 +219,7 @@ class DeyeModbusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _call_read(self, method_name, address, count):
         client = await self._ensure_client()
         method = getattr(client, method_name)
-        a = self._addr(address)
-        # pymodbus 3.x -> slave=, pymodbus 2.x -> unit=, older -> positional.
-        for kwargs in (
-            {"count": count, "slave": self._unit_id},
-            {"count": count, "unit": self._unit_id},
-            {"count": count},
-        ):
-            try:
-                return await method(a, **kwargs)
-            except TypeError:
-                continue
-        try:
-            return await method(a, count)
-        except TypeError:
-            return None
+        return await method(self._addr(address), count=count, **self._unit_kwargs(method))
 
     async def _read_input(self, address, count):
         rr = await self._call_read("read_input_registers", address, count)
@@ -201,44 +230,39 @@ class DeyeModbusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return None if rr is None or (getattr(rr, "isError", None) and rr.isError()) else getattr(rr, "registers", None)
 
     # ------------------------------------------------------------------ writes
-    async def _write_call(self, method_name: str, address: int, payload, what: str) -> bool:
-        """Run one Modbus write, serialised with polling on the shared client.
+    async def _write_locked(self, method_name: str, address: int, payload, what: str) -> bool:
+        """Run one Modbus write. The caller must hold ``self._lock``.
 
-        All requests share a single TCP connection; without the lock a write can
+        All requests share a single connection; without the lock a write can
         interleave with a poll, which pymodbus reports as a transaction_id
         mismatch and which can drop the write. Failures are logged instead of
         being swallowed so that a rejected write is visible in the HA log.
         """
-        a = self._addr(address)
-        ok = False
-        async with self._lock:
+        try:
             client = await self._ensure_client()
             method = getattr(client, method_name)
-            # pymodbus 3.x -> slave=, pymodbus 2.x -> unit=, older -> positional.
-            for variant in (
-                lambda: method(a, payload, slave=self._unit_id),
-                lambda: method(a, payload, self._unit_id),
-                lambda: method(a, payload, unit=self._unit_id),
-                lambda: method(a, payload),
-            ):
-                try:
-                    rr = await variant()
-                except TypeError:
-                    continue
-                except Exception as err:  # noqa: BLE001
-                    _LOGGER.warning("Modbus %s to register %s failed: %s", what, address, err)
-                    return False
-                if getattr(rr, "isError", lambda: False)():
-                    _LOGGER.warning("Modbus %s to register %s rejected by inverter: %s", what, address, rr)
-                    return False
-                ok = True
-                break
-            else:
-                _LOGGER.warning("Modbus %s to register %s: no compatible pymodbus call signature", what, address)
+            rr = await method(self._addr(address), payload, **self._unit_kwargs(method))
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Modbus %s to register %s failed: %s", what, address, err)
+            return False
+        if rr is None or getattr(rr, "isError", lambda: False)():
+            _LOGGER.warning("Modbus %s to register %s rejected by inverter: %s", what, address, rr)
+            return False
+        _LOGGER.debug("Modbus %s to register %s OK: %s", what, address, payload)
+        return True
+
+    async def _write_call(self, method_name: str, address: int, payload, what: str) -> bool:
+        async with self._lock:
+            ok = await self._write_locked(method_name, address, payload, what)
         if ok:
-            _LOGGER.debug("Modbus %s to register %s OK: %s", what, address, payload)
             await self.async_request_refresh()
         return ok
+
+    async def _write_single_locked(self, address: int, value: int) -> bool:
+        wire = int(value) & 0xFFFF
+        if self._write_mode == "fc06":
+            return await self._write_locked("write_register", address, wire, "FC06 write")
+        return await self._write_locked("write_registers", address, [wire], "FC16 write")
 
     async def write_single_register(self, address: int, value: int) -> bool:
         """Write one 16-bit holding register using the configured function code.
@@ -247,14 +271,34 @@ class DeyeModbusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Registers" with a single value, which Deye inverters accept. With
         "fc06" it sends FC06 "Write Single Register" (legacy behaviour).
         """
-        wire = int(value) & 0xFFFF
-        if self._write_mode == "fc06":
-            return await self.write_register_fc06(address, wire)
-        return await self._write_call("write_registers", address, [wire], "FC16 write")
+        async with self._lock:
+            ok = await self._write_single_locked(address, value)
+        if ok:
+            await self.async_request_refresh()
+        return ok
 
-    async def write_register_fc06(self, address: int, value: int) -> bool:
-        """Always use FC06, regardless of write_mode (for the raw service)."""
-        return await self._write_call("write_register", address, int(value) & 0xFFFF, "FC06 write")
+    async def write_register_bits(self, address: int, mask: int, value: int) -> bool:
+        """Change only the ``mask`` bits of a packed register (read-modify-write).
+
+        Used for bitfield registers such as 146 (time-of-use enable + weekdays).
+        The register is re-read under the lock right before writing so that the
+        other bits come from the inverter, not from a stale poll.
+        """
+        mask = int(mask) & 0xFFFF
+        async with self._lock:
+            try:
+                current = await self._read_holding(address, 1)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning("Reading register %s before a bit write failed: %s", address, err)
+                return False
+            if not current:
+                _LOGGER.warning("Reading register %s before a bit write returned no data", address)
+                return False
+            new = (int(current[0]) & ~mask & 0xFFFF) | (int(value) & mask)
+            ok = True if new == int(current[0]) else await self._write_single_locked(address, new)
+        if ok:
+            await self.async_request_refresh()
+        return ok
 
     async def write_multiple_registers(self, address: int, values: list[int]) -> bool:
         vals = [int(v) & 0xFFFF for v in values]
@@ -272,6 +316,9 @@ class DeyeModbusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_close(self):
         try:
             if self._client:
-                await self._client.close()
+                # close() is a coroutine in old pymodbus and a plain call in new.
+                result = self._client.close()
+                if inspect.isawaitable(result):
+                    await result
         except Exception:  # noqa: BLE001
             pass

@@ -6,6 +6,7 @@ import logging
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -44,6 +45,11 @@ class DeyeRegisterSensor(CoordinatorEntity[dict[str, Any]], SensorEntity):
             self._attr_suggested_display_precision = int(reg.precision)
         if reg.icon:
             self._attr_icon = reg.icon
+        if reg.entity_category:
+            try:
+                self._attr_entity_category = EntityCategory(reg.entity_category)
+            except ValueError:
+                _LOGGER.warning("Unknown entity_category %r for %s", reg.entity_category, reg.name)
         if reg.device_class:
             try:
                 self._attr_device_class = SensorDeviceClass(reg.device_class)

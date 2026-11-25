@@ -37,7 +37,11 @@ class DeyeModbusSwitch(CoordinatorEntity[dict[str, Any]], SwitchEntity):
         self._cfg = cfg
         self._register_type = cfg.get("register_type", "holding")
         self._address = int(cfg["address"])
-        self._on = int(cfg.get("on_value", 1))
+        # With ``mask`` the switch owns only those bits of a packed register
+        # (e.g. 146: bit0 = time-of-use enable, bits 1-7 = weekdays); on/off
+        # values are then the in-place values of that bitfield.
+        self._mask: Optional[int] = int(str(cfg["mask"]), 0) if cfg.get("mask") is not None else None
+        self._on = int(cfg.get("on_value", self._mask if self._mask is not None else 1))
         self._off = int(cfg.get("off_value", 0))
         self._state: Optional[bool] = None
         self._attr_name = cfg.get("name")
@@ -74,6 +78,8 @@ class DeyeModbusSwitch(CoordinatorEntity[dict[str, Any]], SwitchEntity):
     async def _write(self, value: int) -> bool:
         if self._register_type == "coil":
             ok = await self._coordinator.write_coil(self._address, value)
+        elif self._mask is not None:
+            ok = await self._coordinator.write_register_bits(self._address, self._mask, value)
         else:
             ok = await self._coordinator.write_single_register(self._address, value)
         if not ok:
@@ -90,6 +96,8 @@ class DeyeModbusSwitch(CoordinatorEntity[dict[str, Any]], SwitchEntity):
             return
         try:
             v = int(round(float(raw) / self._read_factor))
+            if self._mask is not None:
+                v &= self._mask
             self._state = (v == self._on)
         except Exception:  # noqa: BLE001
             pass

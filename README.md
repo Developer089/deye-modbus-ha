@@ -103,11 +103,23 @@ Rebadged units on the same platform (Sunsynk, etc.) will generally work too.
 | Type | Entities |
 |------|----------|
 | Switch | Inverter On/Off, Solar Sell (Export), Grid Charge Enable, Generator Charge Enable |
-| Select | Work Mode (Selling First / Zero Export To Load / Zero Export To CT) |
-| Number | Max Sell Power, Max Grid Output Power, Active Power Regulation, Battery Max Charge/Discharge Current, Grid Charge Current, Battery Shutdown/Restart/Low SOC, Battery Capacity, Grid Voltage High/Low limits |
-| Time-of-use | 6 slots × Time / Power / SOC / Charge Source (Off / Grid / Generator / Grid+Generator) |
+| Select | Work Mode (Selling First / Zero Export To Load / Zero Export To CT), Gen Port Mode (Generator / Smart Load / Micro Inv Input) |
+| Number | Max Sell Power (register 143), Max Solar Power (register 340), Active Power Regulation, Battery Max Charge/Discharge Current, Grid Charge Current, Battery Shutdown/Restart/Low SOC, Battery Capacity, Grid Voltage High/Low limits |
+| Time-of-use | Master switch + weekday switches, and 6 slots × Time / Power / Voltage / SOC / Charge Source (Off / Grid / Generator / Grid+Generator) |
 
-> **Disabled-by-default entities.** To keep the device tidy, some entities ship disabled: PV3/PV4, per-phase inverter/load detail, generator/backup, grid protection limits, and all time-of-use slots. Enable any of them under the device's **Entities** list → open the entity → **Settings** → toggle *Enabled*.
+### Time of use (TOU)
+
+The entities mirror the *Time of Use* table on the inverter screen:
+
+- **Time Of Use** switches the whole schedule on or off; **TOU Monday … TOU Sunday** select the days it runs (all eight live in register 146).
+- **TOU Time N** is when slot N starts. A slot lasts until the next slot's time; slot 6 wraps around to slot 1. Times are rounded down to 5 minutes, like on the inverter.
+- **TOU Power N** is the battery power limit (W) during the slot.
+- **TOU Voltage N** / **TOU SOC N** is the level the battery is held at in the slot: it is discharged down to it, and charged up to it when a charge source is allowed. The inverter uses **only one of the two** — the read-only **Battery Control Mode** sensor tells you which (`Voltage` → TOU Voltage, `Capacity (SOC)` → TOU SOC). Batteries without BMS communication normally run in voltage mode.
+- **TOU Charge Source N** allows charging from the grid and/or generator in the slot.
+
+There are no separate charge / discharge power registers on these inverters: charging is capped by *Battery Max Charge Current* and *Grid Charge Current*, discharging by *TOU Power* and *Battery Max Discharge Current*.
+
+> **Disabled-by-default entities.** To keep the device tidy, some entities ship disabled: PV3/PV4, per-phase inverter/load detail, generator/backup, and grid protection limits. Enable any of them under the device's **Entities** list → open the entity → **Settings** → toggle *Enabled*.
 
 ---
 
@@ -131,7 +143,7 @@ For advanced/manual register access. Addresses are decimal and given **before** 
 
 | Service | Purpose | Key fields |
 |---------|---------|-----------|
-| `deye_modbus.write_register` | Write one holding register (FC06). | `address`, `value` (0–65535) |
+| `deye_modbus.write_register` | Write one holding register (uses the *Write mode* option, FC16 by default). | `address`, `value` (0–65535) |
 | `deye_modbus.write_registers` | Write a list of 16-bit values starting at an address (FC16). | `address`, `values` (list) |
 | `deye_modbus.write_u32` | Write a 32-bit value across two registers (FC16). | `address`, `value` (0–4294967295), `word_order` (`high_low` default / `low_high`) |
 
@@ -148,7 +160,7 @@ data:
 
 ## How it works / Modbus notes
 
-- **Everything is read with function code `0x03` (FC03, read holding registers)** — on this inverter both the live measurements and the writable settings live in the holding-register space. Writes use FC06 (single) / FC16 (multiple).
+- **Everything is read with function code `0x03` (FC03, read holding registers)** — on this inverter both the live measurements and the writable settings live in the holding-register space. Writes use FC16 ("write multiple registers") — Deye ignores FC06.
 - **32-bit energy counters are stored low-word-first** (`word_order: low_high`, little-endian by word). The integration reassembles them automatically.
 - **Temperatures** use a raw offset of 1000 and scale 0.1, i.e. `°C = (raw − 1000) × 0.1`.
 - **Signed values** (battery/grid/load power and current) are decoded as two's-complement. Grid total power is **positive when importing, negative when exporting**.
@@ -208,7 +220,9 @@ IP adresu měniče najdete v seznamu klientů DHCP na routeru; doporučuje se na
 
 ### Entity a ovládání
 
-Integrace zpřístupní senzory (FV panely, baterie, síť import/export, zátěž, teploty, denní i celková energie) a ovládací prvky (režim práce, prodej do sítě, nabíjení ze sítě/generátoru, limity proudu a SOC baterie, maximální prodejní výkon, programování podle času – TOU). Některé entity jsou ve výchozím stavu **vypnuté** (PV3/PV4, detaily po fázích, TOU sloty) — zapnete je v nastavení dané entity.
+Integrace zpřístupní senzory (FV panely, baterie, síť import/export, zátěž, teploty, denní i celková energie) a ovládací prvky (režim práce, prodej do sítě, nabíjení ze sítě/generátoru, limity proudu a SOC baterie, maximální prodejní výkon, programování podle času – TOU). Některé entity jsou ve výchozím stavu **vypnuté** (PV3/PV4, detaily po fázích) — zapnete je v nastavení dané entity.
+
+**TOU (Time of Use):** přepínač **Time Of Use** zapíná celý plán, **TOU Monday … Sunday** vybírají dny. Každý ze 6 slotů má začátek (**TOU Time**), limit výkonu baterie (**TOU Power**), cílovou úroveň baterie (**TOU Voltage** nebo **TOU SOC**) a povolený zdroj nabíjení (**TOU Charge Source**). Měnič používá jen jednu z cílových hodnot — kterou, ukazuje senzor **Battery Control Mode** (`Voltage` → TOU Voltage, `Capacity (SOC)` → TOU SOC). Baterie bez komunikace s BMS běží obvykle v napěťovém režimu.
 
 ### Upozornění
 

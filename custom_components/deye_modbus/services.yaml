@@ -1,6 +1,6 @@
 write_register:
-  name: Write single register (FC06)
-  description: Write one value to a holding register, always using FC06 (ignores the write_mode option). Deye inverters usually require write_registers (FC16) instead.
+  name: Write single register
+  description: Write one value to a holding register using the function code selected in the "Write mode" option (FC16 by default, which is what Deye inverters accept).
   fields:
     address:
       name: Address

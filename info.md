@@ -10,7 +10,7 @@ Local Home Assistant integration for **Deye three-phase hybrid inverters** — S
 - Guided config flow (pick model → host/port/unit ID/scan interval) and an options flow for transport, address offset and serial params.
 - Services: `write_register`, `write_registers`, `write_u32` for advanced access.
 
-Some entities (PV3/PV4, per-phase detail, TOU slots) ship **disabled by default** — enable them in the entity settings.
+Some entities (PV3/PV4, per-phase detail) ship **disabled by default** — enable them in the entity settings.
 
 ## Supported models
 

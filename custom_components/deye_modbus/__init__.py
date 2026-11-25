@@ -5,6 +5,7 @@ import logging
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform, CONF_HOST, CONF_PORT
+from homeassistant.helpers import entity_registry as er
 import homeassistant.helpers.config_validation as cv
 
 from .const import (
@@ -19,7 +20,15 @@ from .coordinator import DeyeModbusCoordinator, RegisterDef
 from .mapping import load_register_mapping
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH, Platform.SELECT, Platform.NUMBER]
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR, Platform.SWITCH, Platform.SELECT, Platform.NUMBER, Platform.TIME,
+]
+
+# Entity platform that serves each control ``type`` from the register map.
+_CONTROL_PLATFORM = {
+    "switch": "switch", "select": "select", "select32": "select",
+    "number": "number", "number32": "number", "time": "time",
+}
 
 # This integration is set up only via the UI config flow (no YAML config).
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -28,7 +37,7 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 _REGISTER_FIELDS = {
     "name", "unique_id", "register_type", "address", "count", "scale", "offset",
     "unit_of_measurement", "device_class", "state_class", "signed", "word_order",
-    "options", "mask", "icon", "enabled_default", "precision",
+    "options", "mask", "icon", "enabled_default", "precision", "entity_category",
 }
 
 
@@ -70,8 +79,36 @@ def _auto_inject_readbacks(sensors: list[dict], controls: list[dict]) -> tuple[l
                 })
                 sensor_uids.add(rb_uid)
             c["read_unique_id"] = rb_uid
-            c.setdefault("read_factor", 1.0)
     return sensors, controls
+
+
+def _migrate_entity_registry(hass: HomeAssistant, entry: ConfigEntry, controls: list[dict]) -> None:
+    """Carry already-registered control entities over a register-map change.
+
+    * A control that moved to another platform (the TOU times were ``number``
+      and are now ``time``) leaves a dead entity behind - remove it.
+    * A control whose map default changed from disabled to enabled stays
+      disabled in existing installs, because Home Assistant only applies the
+      default on first registration. Re-enable it, but only if the integration
+      (not the user) disabled it.
+    """
+    registry = er.async_get(hass)
+    for c in controls:
+        platform = _CONTROL_PLATFORM.get(c.get("type"))
+        if not platform:
+            continue
+        unique_id = f"{entry.entry_id}_{c['unique_id']}"
+        for other in set(_CONTROL_PLATFORM.values()) - {platform}:
+            stale = registry.async_get_entity_id(other, DOMAIN, unique_id)
+            if stale:
+                _LOGGER.info("Removing %s: %s is now a %s entity", stale, c.get("name"), platform)
+                registry.async_remove(stale)
+        if not c.get("enabled_default", True):
+            continue
+        entity_id = registry.async_get_entity_id(platform, DOMAIN, unique_id)
+        reg_entry = registry.async_get(entity_id) if entity_id else None
+        if reg_entry and reg_entry.disabled_by is er.RegistryEntryDisabler.INTEGRATION:
+            registry.async_update_entity(entity_id, disabled_by=None)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -113,10 +150,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "controls": controls_cfg, "model": model_key,
     }
     await coordinator.async_config_entry_first_refresh()
+    _migrate_entity_registry(hass, entry, controls_cfg)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     async def _svc_write_register(call: ServiceCall):
-        ok = await coordinator.write_register_fc06(int(call.data["address"]), int(call.data["value"]))
+        ok = await coordinator.write_single_register(int(call.data["address"]), int(call.data["value"]))
         _LOGGER.info("write_register -> %s", ok)
 
     async def _svc_write_registers(call: ServiceCall):
