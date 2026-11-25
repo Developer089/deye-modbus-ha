@@ -1513,3 +1513,129 @@ controls:
         value: 2
       - label: Grid + Generator
         value: 3
+
+
+  - type: select
+    name: Remote Mode
+    unique_id: remote_mode
+    register_type: holding
+    address: 1100
+    entity_category: config
+    enabled_default: true
+    options:
+      - label: 'Off'
+        value: 0
+      - label: enable remote mode1
+        value: 1
+      - label: enable remote mode2
+        value: 2
+      - label: enable remote mode3
+        value: 3
+
+  - type: number
+    name: Remote mode watchdog time
+    unique_id: remote_mode_watchdog_time
+    register_type: holding
+    address: 1101
+    min: 10
+    max: 0xFFFF
+    step: 1
+    unit_of_measurement: 's'
+    mode: box
+    write_factor: 1
+    entity_category: config
+    enabled_default: true
+
+  - type: select
+    name: Remote Inverter output power control mode
+    unique_id: remote_inverter_output_power_control_mode
+    register_type: holding
+    address: 1104
+    entity_category: config
+    enabled_default: true
+    options:
+      - label: AC side
+        value: 0
+      - label: battery side
+        value: 1
+      - label: grid side
+        value: 2
+
+  - type: select
+    name: Remote Battery control mode
+    unique_id: remote_battery_control_mode
+    register_type: holding
+    address: 1105
+    entity_category: config
+    enabled_default: true
+    options:
+      - label: Voltage
+        value: 0
+      - label: Current
+        value: 1
+      - label: Power
+        value: 2
+      - label: SoC
+        value: 3
+      - label: Voltage Current
+        value: 4
+      - label: Power SoC
+        value: 5
+
+  - type: select
+    name: Remote AC power control mode
+    unique_id: remote_ac_power_control_mode
+    register_type: holding
+    address: 1106
+    entity_category: config
+    enabled_default: true
+    options:
+      - label: Three phase together
+        value: 0
+      - label: each phase independently
+        value: 1
+
+  - type: number
+    name: Remote Battery constant power
+    unique_id: remote_battery_constant_power
+    register_type: holding
+    address: 1109
+    min: -120
+    max: 120
+    step: 1
+    signed: true
+    unit_of_measurement: '%'
+    mode: box
+    write_factor: 10
+    entity_category: config
+    enabled_default: true
+
+  - type: number
+    name: Remote Battery SoC
+    unique_id: remote_battery_soc
+    register_type: holding
+    address: 1110
+    min: 0
+    max: 100
+    step: 1
+    signed: true
+    unit_of_measurement: '%'
+    mode: box
+    write_factor: 1
+    entity_category: config
+    enabled_default: true
+
+  - type: number
+    name: Remote Setting INV output power 3phase
+    unique_id: remote_setting_inv_output_power_3phase
+    register_type: holding
+    address: 1111
+    min: -120
+    max: 120
+    step: 1
+    signed: true
+    unit_of_measurement: '%'
+    mode: box
+    write_factor: 10
+    entity_category: config
+    enabled_default: true
